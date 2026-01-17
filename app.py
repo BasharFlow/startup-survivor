@@ -40,9 +40,12 @@ def get_ai_response(user_input):
     {"text": "Hikaye...", "month": (ay), "stats": {"money": 50, "team": 50, "motivation": 50}, "game_over": false, "game_over_reason": ""}
     """
     
-    # Model: Hesabın yeni olduğu için en güvenli modeli seçelim (1.5 Flash)
-    # Eğer hata verirse 2.0 deneriz ama 1.5 en güvenlisidir.
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # --- DÜZELTME BURADA: ARTIK 2.0 KULLANILIYOR ---
+    try:
+        model = genai.GenerativeModel('gemini-2.0-flash')
+    except:
+        # Eğer onda da sorun çıkarsa (çok düşük ihtimal) en temel modele geç
+        model = genai.GenerativeModel('gemini-pro')
     
     chat_history = [{"role": "user", "parts": [system_prompt]}]
     for msg in st.session_state.history: chat_history.append(msg)
@@ -53,12 +56,12 @@ def get_ai_response(user_input):
         text = response.text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)
     except Exception as e:
-        st.error(f"AI Hatası: {e}")
+        st.error(f"AI Model Hatası: {e}")
         return None
 
 # --- 4. ARAYÜZ ---
 st.title("🚀 Startup Survivor")
-st.caption("Yeni Hesap Modu 🟢")
+st.caption("🟢 Sistem Aktif | Model: Gemini 2.0 Flash")
 st.markdown("---")
 
 col1, col2, col3 = st.columns(3)
@@ -83,7 +86,7 @@ if st.session_state.month == 0:
     st.info("Hoş geldin! Şirketinin adı ne?")
     startup_idea = st.chat_input("Girişim fikrini yaz...")
     if startup_idea:
-        with st.spinner("Başlıyoruz..."):
+        with st.spinner("Yatırımcılar fikrini inceliyor..."):
             response = get_ai_response(f"Oyun başlasın. Fikrim: {startup_idea}")
             if response:
                 st.session_state.history.append({"role": "user", "parts": [f"Girişim: {startup_idea}"]})
@@ -95,7 +98,7 @@ elif not st.session_state.game_over:
     user_move = st.chat_input("Ne yapacaksın?")
     if user_move:
         st.session_state.history.append({"role": "user", "parts": [user_move]})
-        with st.spinner("Hesaplanıyor..."):
+        with st.spinner("Piyasa tepki veriyor..."):
             response = get_ai_response(user_move)
             if response:
                 st.session_state.history.append({"role": "model", "parts": [json.dumps(response)]})
