@@ -4,18 +4,6 @@ import random
 import json
 import time
 
-import streamlit as st
-import google.generativeai as genai
-import random
-import json
-
-# --- AJAN KOD (Sürüm Kontrolü) ---
-st.write(f"Yüklü Generative AI Sürümü: {genai.__version__}")
-# Eğer ekranda 0.8.3'ten küçük bir sayı (örn: 0.3.0) yazarsa suçlu sunucudur.
-# ---------------------------------
-
-# ... Kodun geri kalanı aşağıda devam etsin ...
-
 # --- SAYFA AYARLARI ---
 st.set_page_config(
     page_title="Startup Survivor",
@@ -79,9 +67,9 @@ def get_ai_response(user_input):
     }
     """
     
-    # --- DÜZELTME: SADECE GÜNCEL MODEL ---
-    # Eski kütüphaneler bile flash modelini bu isimle tanır
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # --- DEĞİŞİKLİK BURADA: ESKİ VE SAĞLAM MODEL ---
+    # gemini-pro (1.0) her bölgede ve her şartta çalışır.
+    model = genai.GenerativeModel('gemini-pro')
     
     chat_history = [{"role": "user", "parts": [system_prompt]}]
     for msg in st.session_state.history:
@@ -96,6 +84,7 @@ def get_ai_response(user_input):
         text = text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)
     except Exception as e:
+        # Yedek plan: Eğer cevap JSON değilse düz metin olarak hatayı göster
         st.error(f"Yapay zeka hatası: {e}")
         return None
 
