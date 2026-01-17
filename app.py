@@ -4,6 +4,18 @@ import random
 import json
 import time
 
+import streamlit as st
+import google.generativeai as genai
+import random
+import json
+
+# --- AJAN KOD (Sürüm Kontrolü) ---
+st.write(f"Yüklü Generative AI Sürümü: {genai.__version__}")
+# Eğer ekranda 0.8.3'ten küçük bir sayı (örn: 0.3.0) yazarsa suçlu sunucudur.
+# ---------------------------------
+
+# ... Kodun geri kalanı aşağıda devam etsin ...
+
 # --- SAYFA AYARLARI ---
 st.set_page_config(
     page_title="Startup Survivor",
