@@ -11,13 +11,8 @@ st.set_page_config(
     layout="centered"
 )
 
-# --- 1. AKILLI ANAHTAR SEÇİMİ VE RETRY MEKANİZMASI ---
-def get_response_with_retry(prompt_parts, max_retries=10):
-    """
-    Hata alırsa başka anahtara geçip tekrar dener.
-    Bu fonksiyon '429 Kota' hatasını kullanıcıya göstermez,
-    arkada sessizce yeni anahtarla sorunu çözer.
-    """
+# --- 1. AKILLI RETRY MEKANİZMASI (HİBRİD MODEL) ---
+def get_response_with_retry(prompt_parts, max_retries=6):
     
     if "GOOGLE_API_KEYS" not in st.secrets:
         st.error("HATA: Secrets dosyasında GOOGLE_API_KEYS bulunamadı!")
@@ -25,35 +20,46 @@ def get_response_with_retry(prompt_parts, max_retries=10):
 
     key_list = st.secrets["GOOGLE_API_KEYS"]
     
-    # 10 kereye kadar farklı anahtarlarla deneme hakkı veriyoruz
+    # İlerleme çubuğu (Kullanıcı beklediğini görsün)
+    progress_text = st.empty()
+    
     for attempt in range(max_retries):
         try:
-            # 1. Rastgele bir anahtar seç
+            # 1. Rastgele anahtar seç
             active_key = random.choice(key_list)
             genai.configure(api_key=active_key)
             
-            # 2. Modeli Seç (Listende gördüğümüz çalışan model)
-            # gemini-2.0-flash şu an senin için en uygunu
-            model = genai.GenerativeModel('gemini-2.0-flash')
+            # KULLANICIYA BİLGİ VER: Şu an kaçıncı deneme yapılıyor?
+            if attempt > 0:
+                progress_text.caption(f"⏳ Sunucu yoğun, alternatif hatlar deneniyor... (Deneme {attempt+1}/{max_retries})")
+            
+            # 2. MODEL SEÇİMİ (STRATEJİK)
+            # İlk 3 denemede en güçlü modeli (2.0) zorla.
+            # Eğer hala hata veriyorsa, daha hızlı ve kotası bol olan (1.5) modele geç.
+            if attempt < 3:
+                model = genai.GenerativeModel('gemini-2.0-flash')
+            else:
+                model = genai.GenerativeModel('gemini-1.5-flash')
             
             # 3. İsteği Gönder
             response = model.generate_content(prompt_parts)
             
-            # 4. Cevabı JSON'a çevir ve döndür
+            # 4. Başarılı olduysa temizle ve döndür
+            progress_text.empty() # Yazıyı kaldır
             text = response.text
             text = text.replace("```json", "").replace("```", "").strip()
             return json.loads(text)
             
         except Exception as e:
-            # Eğer hata '429' (Kota) ise veya başka bir sunucu hatasıysa:
-            # Kullanıcıya hissettirmeden döngünün başına dön ve yeni anahtar seç.
-            # Sadece geliştirici konsoluna (loglara) not düşelim.
-            print(f"Deneme {attempt+1} başarısız (Anahtar sonu ...{active_key[-5:]}): {e}")
-            time.sleep(1) # Sunucuyu boğmamak için 1 saniye bekle
+            # Hata durumunda bekleme süresi (Exponential Backoff)
+            # Her hatada bekleme süresini biraz arttır: 2sn, 4sn, 6sn...
+            wait_time = (attempt + 1) * 2 
+            time.sleep(wait_time) 
             continue
     
-    # Eğer 10 denemede de hepsi hata verirse:
-    st.error("⚠️ Sistem şu an çok yoğun. Lütfen 1-2 dakika bekleyip tekrar deneyin.")
+    # Hepsini denedi ve olmadıysa:
+    progress_text.empty()
+    st.error("⚠️ Google Sunucuları şu an aşırı yoğun (Global Rate Limit). Lütfen 1 dakika bekleyip tekrar deneyin.")
     return None
 
 # --- 2. OYUN HAFIZASI ---
@@ -91,19 +97,17 @@ def get_ai_response(user_input):
     }
     """
     
-    # Sohbet geçmişini hazırla
     chat_history = [{"role": "user", "parts": [system_prompt]}]
     for msg in st.session_state.history:
         chat_history.append(msg)
     chat_history.append({"role": "user", "parts": [user_input]})
 
-    # Yeni yazdığımız "Retry" özellikli fonksiyonu çağır
     return get_response_with_retry(chat_history)
 
 # --- 4. ARAYÜZ (UI) ---
 
 st.title("🚀 Startup Survivor")
-st.caption(f"🟢 Sistem Aktif | Gemini 2.0 Flash | 30 Key Auto-Retry Modu")
+st.caption(f"🟢 Sistem Aktif | Akıllı Model Geçişi (2.0 -> 1.5)")
 st.markdown("---")
 
 col1, col2, col3 = st.columns(3)
@@ -139,7 +143,7 @@ if st.session_state.month == 0:
     
     startup_idea = st.chat_input("Girişim fikrini buraya yaz...")
     if startup_idea:
-        with st.spinner("Yatırımcılar ve Analistler toplanıyor... (Sabırlı olun, en uygun sunucu aranıyor)"):
+        with st.spinner("Yatırımcılar ve Analistler toplanıyor..."):
             response_json = get_ai_response(f"Oyun başlıyor. Girişim fikrim: {startup_idea}. Bana ilk ayın durumunu (Ay 1) ve istatistikleri (hepsi 50 başlasın) ver.")
             
             if response_json:
