@@ -40,6 +40,8 @@ if "month" not in st.session_state:
     st.session_state.month = 0
 if "game_over" not in st.session_state:
     st.session_state.game_over = False
+if "game_over_reason" not in st.session_state:
+    st.session_state.game_over_reason = ""
 
 # --- 3. YAPAY ZEKA FONKSİYONU ---
 def get_ai_response(user_input):
@@ -67,12 +69,10 @@ def get_ai_response(user_input):
     }
     """
     
-    # --- İŞTE ÇÖZÜM BURADA ---
-    # Senin listende görünen en güçlü modeli seçtik:
+    # --- MODEL SEÇİMİ: SENİN HESABINDAKİ EN GÜÇLÜ MODEL ---
     try:
         model = genai.GenerativeModel('gemini-2.0-flash-exp')
     except:
-        # Yedek olarak listedeki diğer ihtimal
         model = genai.GenerativeModel('gemini-2.0-flash')
     
     chat_history = [{"role": "user", "parts": [system_prompt]}]
@@ -159,4 +159,4 @@ elif not st.session_state.game_over:
 else:
     st.error(f"❌ OYUN BİTTİ! Sebebi: {st.session_state.get('game_over_reason', 'İflas')}")
     if st.button("Tekrar Dene 🔄"):
-        st.
+        st.session_
