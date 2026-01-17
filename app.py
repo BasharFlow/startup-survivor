@@ -11,21 +11,50 @@ st.set_page_config(
     layout="centered"
 )
 
-# --- 1. ZORUNLU ANAHTAR ROTASYONU (30 KEY) ---
-def get_random_key():
-    """Secrets dosyasındaki 30 anahtardan birini rastgele seçer."""
-    try:
-        if "GOOGLE_API_KEYS" in st.secrets:
-            key_list = st.secrets["GOOGLE_API_KEYS"]
-            # Listeden rastgele bir anahtar seç
-            selected_key = random.choice(key_list)
-            return selected_key
-        else:
-            st.error("HATA: Secrets dosyasında anahtar listesi bulunamadı!")
-            return None
-    except Exception as e:
-        st.error(f"Anahtar seçim hatası: {e}")
+# --- 1. AKILLI ANAHTAR SEÇİMİ VE RETRY MEKANİZMASI ---
+def get_response_with_retry(prompt_parts, max_retries=10):
+    """
+    Hata alırsa başka anahtara geçip tekrar dener.
+    Bu fonksiyon '429 Kota' hatasını kullanıcıya göstermez,
+    arkada sessizce yeni anahtarla sorunu çözer.
+    """
+    
+    if "GOOGLE_API_KEYS" not in st.secrets:
+        st.error("HATA: Secrets dosyasında GOOGLE_API_KEYS bulunamadı!")
         return None
+
+    key_list = st.secrets["GOOGLE_API_KEYS"]
+    
+    # 10 kereye kadar farklı anahtarlarla deneme hakkı veriyoruz
+    for attempt in range(max_retries):
+        try:
+            # 1. Rastgele bir anahtar seç
+            active_key = random.choice(key_list)
+            genai.configure(api_key=active_key)
+            
+            # 2. Modeli Seç (Listende gördüğümüz çalışan model)
+            # gemini-2.0-flash şu an senin için en uygunu
+            model = genai.GenerativeModel('gemini-2.0-flash')
+            
+            # 3. İsteği Gönder
+            response = model.generate_content(prompt_parts)
+            
+            # 4. Cevabı JSON'a çevir ve döndür
+            text = response.text
+            text = text.replace("```json", "").replace("```", "").strip()
+            return json.loads(text)
+            
+        except Exception as e:
+            # Eğer hata '429' (Kota) ise veya başka bir sunucu hatasıysa:
+            # Kullanıcıya hissettirmeden döngünün başına dön ve yeni anahtar seç.
+            # Sadece geliştirici konsoluna (loglara) not düşelim.
+            print(f"Deneme {attempt+1} başarısız (Anahtar sonu ...{active_key[-5:]}): {e}")
+            time.sleep(1) # Sunucuyu boğmamak için 1 saniye bekle
+            continue
+    
+    # Eğer 10 denemede de hepsi hata verirse:
+    st.error("⚠️ Sistem şu an çok yoğun. Lütfen 1-2 dakika bekleyip tekrar deneyin.")
+    return None
 
 # --- 2. OYUN HAFIZASI ---
 if "history" not in st.session_state:
@@ -41,15 +70,7 @@ if "game_over_reason" not in st.session_state:
 
 # --- 3. YAPAY ZEKA FONKSİYONU ---
 def get_ai_response(user_input):
-    # ADIM 1: Yeni bir anahtar çek (Her turda değişir)
-    active_key = get_random_key()
-    if not active_key:
-        return None
     
-    # Anahtarı sisteme tanıt
-    genai.configure(api_key=active_key)
-    
-    # ADIM 2: Prompt Hazırla
     system_prompt = """
     Sen 'Startup Survivor' adında zorlu bir girişimcilik simülasyonusun.
     Görevin: Kullanıcının startup'ını 12 ay boyunca hayatta tutmaya çalışmak.
@@ -70,34 +91,19 @@ def get_ai_response(user_input):
     }
     """
     
-    # ADIM 3: Modeli Seç
-    # Listende 3. sırada gördüğümüz ve çalışan model:
-    try:
-        model = genai.GenerativeModel('gemini-2.0-flash')
-    except:
-        # Yedek olarak listedeki diğer versiyon
-        model = genai.GenerativeModel('gemini-2.0-flash-exp')
-    
+    # Sohbet geçmişini hazırla
     chat_history = [{"role": "user", "parts": [system_prompt]}]
     for msg in st.session_state.history:
         chat_history.append(msg)
-    
     chat_history.append({"role": "user", "parts": [user_input]})
 
-    try:
-        response = model.generate_content(chat_history)
-        text = response.text
-        # JSON temizliği
-        text = text.replace("```json", "").replace("```", "").strip()
-        return json.loads(text)
-    except Exception as e:
-        st.warning(f"⚠️ Bir anahtarda kota sorunu oldu, lütfen tekrar deneyin (Yeni anahtara geçilecek). Hata: {e}")
-        return None
+    # Yeni yazdığımız "Retry" özellikli fonksiyonu çağır
+    return get_response_with_retry(chat_history)
 
 # --- 4. ARAYÜZ (UI) ---
 
 st.title("🚀 Startup Survivor")
-st.caption(f"🟢 Sistem Aktif | Model: Gemini 2.0 Flash | 30 Anahtarlı Rotasyon Modu")
+st.caption(f"🟢 Sistem Aktif | Gemini 2.0 Flash | 30 Key Auto-Retry Modu")
 st.markdown("---")
 
 col1, col2, col3 = st.columns(3)
@@ -133,7 +139,7 @@ if st.session_state.month == 0:
     
     startup_idea = st.chat_input("Girişim fikrini buraya yaz...")
     if startup_idea:
-        with st.spinner("Yatırımcılar ve Analistler toplanıyor..."):
+        with st.spinner("Yatırımcılar ve Analistler toplanıyor... (Sabırlı olun, en uygun sunucu aranıyor)"):
             response_json = get_ai_response(f"Oyun başlıyor. Girişim fikrim: {startup_idea}. Bana ilk ayın durumunu (Ay 1) ve istatistikleri (hepsi 50 başlasın) ver.")
             
             if response_json:
