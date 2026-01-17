@@ -14,6 +14,7 @@ st.set_page_config(
 # --- 1. API KEY ROTASYONU ---
 def configure_genai():
     try:
+        # Secrets dosyasındaki listeden rastgele bir anahtar seç
         if "GOOGLE_API_KEYS" in st.secrets:
             key_list = st.secrets["GOOGLE_API_KEYS"]
             selected_key = random.choice(key_list)
@@ -26,7 +27,7 @@ def configure_genai():
         st.error(f"Konfigürasyon hatası: {e}")
         return False
 
-# --- 2. OYUN HAFIZASI ---
+# --- 2. OYUN HAFIZASI (SESSION STATE) ---
 if "history" not in st.session_state:
     st.session_state.history = []
 if "stats" not in st.session_state:
@@ -42,10 +43,10 @@ if "game_over" not in st.session_state:
 
 # --- 3. YAPAY ZEKA FONKSİYONU ---
 def get_ai_response(user_input):
+    # Anahtarı tazele
     if not configure_genai():
         return None
 
-    # Sistem Talimatı
     system_prompt = """
     Sen 'Startup Survivor' adında zorlu bir girişimcilik simülasyonusun.
     Görevin: Kullanıcının startup'ını 12 ay boyunca hayatta tutmaya çalışmak.
@@ -66,12 +67,9 @@ def get_ai_response(user_input):
     }
     """
     
-    # --- DÜZELTME BURADA YAPILDI (gemini-pro kullanıldı) ---
-    try:
-        model = genai.GenerativeModel('gemini-pro') 
-    except:
-        model = genai.GenerativeModel('gemini-1.5-flash')
-
+    # --- DÜZELTME: SADECE GÜNCEL MODEL ---
+    # Eski kütüphaneler bile flash modelini bu isimle tanır
+    model = genai.GenerativeModel('gemini-1.5-flash')
     
     chat_history = [{"role": "user", "parts": [system_prompt]}]
     for msg in st.session_state.history:
@@ -82,18 +80,18 @@ def get_ai_response(user_input):
     try:
         response = model.generate_content(chat_history)
         text = response.text
+        # JSON temizliği
         text = text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)
     except Exception as e:
         st.error(f"Yapay zeka hatası: {e}")
         return None
 
-# --- 4. ARAYÜZ (UI) ---
+# --- 4. ARAYÜZ (UI) TASARIMI ---
 
 st.title("🚀 Startup Survivor")
 st.markdown("---")
 
-# İstatistik Çubukları
 col1, col2, col3 = st.columns(3)
 col1.metric("💰 Nakit", f"%{st.session_state.stats['money']}")
 col1.progress(st.session_state.stats['money'] / 100)
@@ -106,7 +104,6 @@ col3.progress(st.session_state.stats['motivation'] / 100)
 
 st.markdown("---")
 
-# Sohbet Geçmişi
 for msg in st.session_state.history:
     if msg["role"] == "model":
         try:
@@ -145,16 +142,18 @@ elif not st.session_state.game_over:
         st.session_state.history.append({"role": "user", "parts": [user_move]})
         with st.spinner("Piyasa tepki veriyor..."):
             response_json = get_ai_response(user_move)
+            
             if response_json:
                 st.session_state.history.append({"role": "model", "parts": [json.dumps(response_json)]})
                 st.session_state.stats = response_json["stats"]
                 st.session_state.month = response_json["month"]
                 if response_json.get("game_over") == True:
                     st.session_state.game_over = True
+                    st.session_state.game_over_reason = response_json.get("game_over_reason", "Bilinmiyor")
                 st.rerun()
 
 else:
-    st.error("❌ OYUN BİTTİ! İflas ettin.")
+    st.error(f"❌ OYUN BİTTİ! Sebebi: {st.session_state.get('game_over_reason', 'İflas')}")
     if st.button("Tekrar Dene 🔄"):
         st.session_state.history = []
         st.session_state.stats = {"money": 50, "team": 50, "motivation": 50}
