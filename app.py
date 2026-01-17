@@ -11,31 +11,27 @@ st.set_page_config(
     layout="centered"
 )
 
-# --- 1. API KEY ROTASYONU (30 KEY) ---
-def configure_genai():
+# --- 1. ZORUNLU ANAHTAR ROTASYONU ---
+def get_random_key():
+    """Secrets dosyasındaki 30 anahtardan birini rastgele seçer."""
     try:
-        # Secrets dosyasındaki listeden rastgele bir anahtar seç
         if "GOOGLE_API_KEYS" in st.secrets:
             key_list = st.secrets["GOOGLE_API_KEYS"]
+            # Listeden rastgele bir anahtar seç
             selected_key = random.choice(key_list)
-            genai.configure(api_key=selected_key)
-            return True
+            return selected_key
         else:
-            st.error("HATA: Secrets dosyasında GOOGLE_API_KEYS bulunamadı!")
-            return False
+            st.error("HATA: Secrets dosyasında anahtar listesi bulunamadı!")
+            return None
     except Exception as e:
-        st.error(f"Konfigürasyon hatası: {e}")
-        return False
+        st.error(f"Anahtar seçim hatası: {e}")
+        return None
 
 # --- 2. OYUN HAFIZASI ---
 if "history" not in st.session_state:
     st.session_state.history = []
 if "stats" not in st.session_state:
-    st.session_state.stats = {
-        "money": 50,
-        "team": 50,
-        "motivation": 50
-    }
+    st.session_state.stats = {"money": 50, "team": 50, "motivation": 50}
 if "month" not in st.session_state:
     st.session_state.month = 0
 if "game_over" not in st.session_state:
@@ -45,10 +41,17 @@ if "game_over_reason" not in st.session_state:
 
 # --- 3. YAPAY ZEKA FONKSİYONU ---
 def get_ai_response(user_input):
-    # Anahtarı tazele
-    if not configure_genai():
+    # ADIM 1: Yeni bir anahtar çek ve sisteme yükle
+    active_key = get_random_key()
+    if not active_key:
         return None
+    
+    genai.configure(api_key=active_key)
+    
+    # Debug: Hangi anahtarın kullanıldığını (son 4 hanesini) görmek istersen:
+    # print(f"Kullanılan Anahtar Sonu: ...{active_key[-4:]}")
 
+    # ADIM 2: Prompt Hazırla
     system_prompt = """
     Sen 'Startup Survivor' adında zorlu bir girişimcilik simülasyonusun.
     Görevin: Kullanıcının startup'ını 12 ay boyunca hayatta tutmaya çalışmak.
@@ -69,11 +72,12 @@ def get_ai_response(user_input):
     }
     """
     
-    # --- MODEL SEÇİMİ: SENİN HESABINDAKİ EN GÜÇLÜ MODEL ---
+    # ADIM 3: Modeli Seç (gemini-1.5-flash şu an en kararlı olanıdır)
+    # Eğer 1.5 çalışmazsa 2.0'ı dener.
     try:
-        model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        model = genai.GenerativeModel('gemini-1.5-flash')
     except:
-        model = genai.GenerativeModel('gemini-2.0-flash')
+        model = genai.GenerativeModel('gemini-2.0-flash-exp')
     
     chat_history = [{"role": "user", "parts": [system_prompt]}]
     for msg in st.session_state.history:
@@ -88,12 +92,13 @@ def get_ai_response(user_input):
         text = text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)
     except Exception as e:
-        st.error(f"Yapay zeka hatası: {e}")
+        st.error(f"Yapay zeka hatası (Anahtar limiti veya model sorunu): {e}")
         return None
 
 # --- 4. ARAYÜZ (UI) ---
 
 st.title("🚀 Startup Survivor")
+st.caption(f"Sistem Durumu: 🟢 Aktif | 30 Anahtarlı Rotasyon Devrede")
 st.markdown("---")
 
 col1, col2, col3 = st.columns(3)
@@ -129,7 +134,7 @@ if st.session_state.month == 0:
     
     startup_idea = st.chat_input("Girişim fikrini buraya yaz...")
     if startup_idea:
-        with st.spinner("Yatırımcılar fikrini inceliyor..."):
+        with st.spinner("Yatırımcılar ve Analistler toplanıyor..."):
             response_json = get_ai_response(f"Oyun başlıyor. Girişim fikrim: {startup_idea}. Bana ilk ayın durumunu (Ay 1) ve istatistikleri (hepsi 50 başlasın) ver.")
             
             if response_json:
@@ -159,4 +164,9 @@ elif not st.session_state.game_over:
 else:
     st.error(f"❌ OYUN BİTTİ! Sebebi: {st.session_state.get('game_over_reason', 'İflas')}")
     if st.button("Tekrar Dene 🔄"):
-        st.session_
+        st.session_state.history = []
+        st.session_state.stats = {"money": 50, "team": 50, "motivation": 50}
+        st.session_state.month = 0
+        st.session_state.game_over = False
+        st.session_state.game_over_reason = ""
+        st.rerun()
