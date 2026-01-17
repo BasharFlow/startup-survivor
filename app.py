@@ -1,115 +1,130 @@
 import streamlit as st
 import google.generativeai as genai
-import random
-import json
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="Startup Survivor", page_icon="🚀", layout="centered")
 
-# --- 1. TEK ANAHTARLI BASİT BAĞLANTI ---
+# --- 1. BAĞLANTI VE OTOMATİK MODEL SEÇİMİ ---
 def configure_genai():
+    # 1. Anahtarı Bul
+    api_key = None
+    if "GOOGLE_API_KEYS" in st.secrets:
+        api_key = st.secrets["GOOGLE_API_KEYS"][0]
+    elif "GOOGLE_API_KEY" in st.secrets:
+        api_key = st.secrets["GOOGLE_API_KEY"]
+
+    if not api_key:
+        st.error("HATA: Secrets dosyasında API Anahtarı bulunamadı!")
+        st.stop()
+
     try:
-        if "GOOGLE_API_KEYS" in st.secrets:
-            # Listeden ilk anahtarı al
-            api_key = st.secrets["GOOGLE_API_KEYS"][0]
-            genai.configure(api_key=api_key)
-            return True
-        else:
-            st.error("HATA: Secrets dosyasında anahtar bulunamadı!")
-            return False
+        genai.configure(api_key=api_key)
+        
+        # 2. Hesabındaki Açık Modeli Otomatik Bul
+        bulunan_model = None
+        # Öncelik sırası: Önce 2.0 Flash (Hızlı), sonra 1.5 Flash, sonra Pro
+        oncelikli_modeller = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-pro']
+        
+        # Önce listedekileri dene
+        for m_name in oncelikli_modeller:
+            try:
+                model = genai.GenerativeModel(m_name)
+                # Test atışı yapalım ki modelin çalıştığından emin olalım
+                model.generate_content("Test")
+                bulunan_model = m_name
+                break
+            except:
+                continue
+        
+        # Eğer listedekiler çalışmazsa, sistemden herhangi bir açık model bul
+        if not bulunan_model:
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    bulunan_model = m.name
+                    break
+        
+        if not bulunan_model:
+            st.error("Hesabında kullanılabilir model bulunamadı.")
+            st.stop()
+            
+        return genai.GenerativeModel(bulunan_model)
+
     except Exception as e:
         st.error(f"Bağlantı Hatası: {e}")
-        return False
+        st.stop()
 
-# --- 2. OYUN DEĞİŞKENLERİ ---
-if "history" not in st.session_state: st.session_state.history = []
-if "stats" not in st.session_state: st.session_state.stats = {"money": 50, "team": 50, "motivation": 50}
-if "month" not in st.session_state: st.session_state.month = 0
-if "game_over" not in st.session_state: st.session_state.game_over = False
-if "game_over_reason" not in st.session_state: st.session_state.game_over_reason = ""
+# Modeli Başlat
+model = configure_genai()
 
-# --- 3. YAPAY ZEKA ---
-def get_ai_response(user_input):
-    if not configure_genai(): return None
-
-    system_prompt = """
-    Sen 'Startup Survivor' adında zorlu bir girişimcilik simülasyonusun.
-    Görevin: Kullanıcının startup'ını 12 ay boyunca hayatta tutmaya çalışmak.
-    Kurallar: 1. Her turda kriz yarat. 2. İstatistikleri (Money, Team, Motivation) yönet. 3. Biri 0 olursa Game Over.
-    Cevabını SADECE şu JSON formatında ver:
-    {"text": "Hikaye...", "month": (ay), "stats": {"money": 50, "team": 50, "motivation": 50}, "game_over": false, "game_over_reason": ""}
+# --- OYUN FONKSİYONLARI ---
+def oyun_baslat(startup_fikri):
+    prompt = f"""
+    Sen 'Startup Survivor' oyunusun. Kullanıcının Fikri: "{startup_fikri}"
+    GÖREVİN:
+    1. Bu fikrin ilk ayını simüle et.
+    2. Kullanıcıya bir kriz sun.
+    3. İki seçenek (A ve B) öner.
+    Cevabı şu formatta ver:
+    **DURUM:** [Durum]
+    **KRİZ:** [Kriz]
+    **SEÇENEKLER:** A) [Seçenek 1] B) [Seçenek 2]
     """
-    
-    # --- DÜZELTME BURADA: ARTIK 2.0 KULLANILIYOR ---
     try:
-        model = genai.GenerativeModel('gemini-2.0-flash')
-    except:
-        # Eğer onda da sorun çıkarsa (çok düşük ihtimal) en temel modele geç
-        model = genai.GenerativeModel('gemini-pro')
-    
-    chat_history = [{"role": "user", "parts": [system_prompt]}]
-    for msg in st.session_state.history: chat_history.append(msg)
-    chat_history.append({"role": "user", "parts": [user_input]})
-
-    try:
-        response = model.generate_content(chat_history)
-        text = response.text.replace("```json", "").replace("```", "").strip()
-        return json.loads(text)
+        response = model.generate_content(prompt)
+        return response.text
     except Exception as e:
-        st.error(f"AI Model Hatası: {e}")
-        return None
+        return f"Yapay zeka yanıt veremedi. Hata: {e}"
 
-# --- 4. ARAYÜZ ---
+def hamle_yap(eski_hikaye, kullanici_hamlesi):
+    prompt = f"""
+    Önceki Hikaye: {eski_hikaye}
+    Kullanıcının Hamlesi: "{kullanici_hamlesi}"
+    GÖREVİN:
+    1. Hamlenin sonucunu yaz (Başarılı mı, battı mı?).
+    2. Hikayeyi sonraki aya taşı ve yeni kriz çıkar.
+    Cevap Formatı:
+    **SONUÇ:** [Sonuç]
+    **YENİ DURUM:** [Yeni durum]
+    **KRİZ:** [Yeni kriz]
+    **SEÇENEKLER:** A) [Seçenek 1] B) [Seçenek 2]
+    """
+    try:
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"Yapay zeka yanıt veremedi. Hata: {e}"
+
+# --- ARAYÜZ ---
 st.title("🚀 Startup Survivor")
-st.caption("🟢 Sistem Aktif | Model: Gemini 2.0 Flash")
-st.markdown("---")
+st.write("Girişim fikrini yaz, bakalım 12 ay hayatta kalabilecek misin?")
 
-col1, col2, col3 = st.columns(3)
-col1.metric("💰 Nakit", f"%{st.session_state.stats['money']}")
-col1.progress(st.session_state.stats['money'] / 100)
-col2.metric("👥 Ekip", f"%{st.session_state.stats['team']}")
-col2.progress(st.session_state.stats['team'] / 100)
-col3.metric("🔥 Motivasyon", f"%{st.session_state.stats['motivation']}")
-col3.progress(st.session_state.stats['motivation'] / 100)
-st.markdown("---")
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "oyun_aktif" not in st.session_state:
+    st.session_state.oyun_aktif = False
 
-for msg in st.session_state.history:
-    if msg["role"] == "model":
-        try: content = json.loads(msg["parts"][0])["text"]
-        except: content = msg["parts"][0]
-        with st.chat_message("ai"): st.write(content)
-    else:
-        if "Sen 'Startup Survivor'" not in msg["parts"][0]:
-            with st.chat_message("user"): st.write(msg["parts"][0])
-
-if st.session_state.month == 0:
-    st.info("Hoş geldin! Şirketinin adı ne?")
-    startup_idea = st.chat_input("Girişim fikrini yaz...")
-    if startup_idea:
-        with st.spinner("Yatırımcılar fikrini inceliyor..."):
-            response = get_ai_response(f"Oyun başlasın. Fikrim: {startup_idea}")
-            if response:
-                st.session_state.history.append({"role": "user", "parts": [f"Girişim: {startup_idea}"]})
-                st.session_state.history.append({"role": "model", "parts": [json.dumps(response)]})
-                st.session_state.stats = response["stats"]
-                st.session_state.month = response["month"]
-                st.rerun()
-elif not st.session_state.game_over:
-    user_move = st.chat_input("Ne yapacaksın?")
-    if user_move:
-        st.session_state.history.append({"role": "user", "parts": [user_move]})
-        with st.spinner("Piyasa tepki veriyor..."):
-            response = get_ai_response(user_move)
-            if response:
-                st.session_state.history.append({"role": "model", "parts": [json.dumps(response)]})
-                st.session_state.stats = response["stats"]
-                st.session_state.month = response["month"]
-                if response.get("game_over"):
-                    st.session_state.game_over = True
-                    st.session_state.game_over_reason = response.get("game_over_reason")
-                st.rerun()
+if not st.session_state.oyun_aktif:
+    fikir = st.chat_input("Fikrini buraya yaz (Örn: Uçan Kargo Drone'ları)...")
+    if fikir:
+        st.session_state.oyun_aktif = True
+        st.session_state.messages.append({"role": "user", "content": fikir})
+        with st.spinner("Simülasyon başlatılıyor..."):
+            cevap = oyun_baslat(fikir)
+            st.session_state.messages.append({"role": "assistant", "content": cevap})
+            st.rerun()
 else:
-    st.error(f"OYUN BİTTİ: {st.session_state.game_over_reason}")
-    if st.button("Tekrar Oyna"):
-        st.session_state.clear()
-        st.rerun()
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    hamle = st.chat_input("Hamleni yap (A, B veya kendi fikrin)...")
+    if hamle:
+        st.session_state.messages.append({"role": "user", "content": hamle})
+        with st.chat_message("user"):
+            st.write(hamle)
+        with st.chat_message("assistant"):
+            with st.spinner("Hesaplanıyor..."):
+                gecmis = "\n".join([m["content"] for m in st.session_state.messages[-3:]])
+                cevap = hamle_yap(gecmis, hamle)
+                st.markdown(cevap)
+                st.session_state.messages.append({"role": "assistant", "content": cevap})
