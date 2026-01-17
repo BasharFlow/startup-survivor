@@ -1,79 +1,38 @@
 import streamlit as st
 import google.generativeai as genai
-import time
 
-st.set_page_config(page_title="Key Tester", layout="wide")
-st.title("🔑 Anahtar Kontrol Merkezi (Röntgen)")
+st.set_page_config(page_title="Manuel Test", page_icon="🔑")
 
-# 1. Anahtarları Al
-try:
-    if "GOOGLE_API_KEYS" in st.secrets:
-        key_list = st.secrets["GOOGLE_API_KEYS"]
-        st.info(f"📂 Toplam Anahtar Sayısı: {len(key_list)}")
+st.title("🔑 Manuel Anahtar Testi")
+st.warning("Bu test, Secrets dosyasını atlar ve anahtarı doğrudan dener.")
+
+# 1. Anahtarı Elle Gir (Secrets dosyasını kullanmıyoruz)
+api_key = st.text_input("O yeni, hiç kullanılmamış anahtarı buraya yapıştır:", type="password")
+
+if st.button("Test Et 🚀"):
+    if not api_key:
+        st.error("Lütfen bir anahtar yapıştırın.")
     else:
-        st.error("Secrets dosyasında anahtar bulunamadı!")
-        st.stop()
-except:
-    st.error("Secrets dosyası okunamadı.")
-    st.stop()
-
-# 2. Test Butonu
-if st.button("Tüm Anahtarları Test Et 🚀"):
-    
-    progress_bar = st.progress(0)
-    status_box = st.empty()
-    
-    working_keys = []
-    failed_keys = []
-    
-    st.write("---")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("✅ Çalışanlar")
-        
-    with col2:
-        st.subheader("❌ Bozuk/Yetkisizler")
-
-    # Döngüyle Hepsini Dene
-    for i, key in enumerate(key_list):
-        # İlerleme çubuğunu güncelle
-        progress_bar.progress((i + 1) / len(key_list))
-        status_box.text(f"Kontrol ediliyor: {i+1}/{len(key_list)} (Sonu: ...{key[-6:]})")
-        
         try:
-            # Anahtarı ayarla
-            genai.configure(api_key=key)
+            # 2. Bağlantıyı Kur
+            genai.configure(api_key=api_key)
             
-            # Basit bir "Merhaba" testi yap (Gemini 2.0 ile)
+            # 3. Modeli Dene (Senin hesabında açık olan 2.0 Flash ile)
             model = genai.GenerativeModel('gemini-2.0-flash')
-            response = model.generate_content("Test", request_options={"timeout": 5})
             
-            # Hata vermediyse çalışıyordur
-            with col1:
-                st.success(f"Key {i+1} (...{key[-6:]}): BAŞARILI 🟢")
-            working_keys.append(key)
+            with st.spinner("Google'a bağlanılıyor..."):
+                response = model.generate_content("Merhaba, sen çalışıyor musun?", request_options={"timeout": 10})
+            
+            # 4. Sonuç
+            st.balloons()
+            st.success("✅ ÇALIŞTI! Sorun senin anahtarında değil, Streamlit'in eski anahtarı hafızada tutmasındaymış.")
+            st.write(f"Cevap: {response.text}")
             
         except Exception as e:
-            error_msg = str(e)
-            with col2:
-                if "API key not valid" in error_msg:
-                    st.error(f"Key {i+1}: GEÇERSİZ ANAHTAR 🔴")
-                elif "User has not used the project" in error_msg or "API not enabled" in error_msg:
-                    st.warning(f"Key {i+1}: API KAPALI 🟡 (Enable API yapmalısın)")
-                elif "429" in error_msg:
-                    st.error(f"Key {i+1}: KOTA DOLU 🔴")
-                else:
-                    st.error(f"Key {i+1}: HATA 🔴 -> {error_msg}")
-            failed_keys.append(key)
+            st.error("❌ HATA DEVAM EDİYOR!")
+            st.code(str(e))
             
-        time.sleep(0.5) # Hızlı gidip kendimiz banlanmayalım
-
-    st.write("---")
-    st.metric("Sağlam Anahtar Sayısı", len(working_keys))
-    
-    if len(working_keys) > 0:
-        st.balloons()
-        st.success("Tebrikler! Çalışan anahtarların var. Şimdi oyunu tekrar yükleyebilirsin.")
-    else:
-        st.error("Hiçbir anahtar çalışmadı. Lütfen Secrets dosyasını ve Google Cloud ayarlarını kontrol et.")
+            if "429" in str(e):
+                st.error("YORUM: Bu anahtar gerçekten bloklanmış. Google, seri üretim proje açtığın için ana hesabını geçici olarak 'spam' moduna almış olabilir.")
+            elif "API key not valid" in str(e):
+                st.error("YORUM: Anahtar yanlış kopyalanmış.")
