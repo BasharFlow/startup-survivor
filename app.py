@@ -11,7 +11,7 @@ st.set_page_config(
     layout="centered"
 )
 
-# --- 1. ZORUNLU ANAHTAR ROTASYONU ---
+# --- 1. ZORUNLU ANAHTAR ROTASYONU (30 KEY) ---
 def get_random_key():
     """Secrets dosyasındaki 30 anahtardan birini rastgele seçer."""
     try:
@@ -41,16 +41,14 @@ if "game_over_reason" not in st.session_state:
 
 # --- 3. YAPAY ZEKA FONKSİYONU ---
 def get_ai_response(user_input):
-    # ADIM 1: Yeni bir anahtar çek ve sisteme yükle
+    # ADIM 1: Yeni bir anahtar çek (Her turda değişir)
     active_key = get_random_key()
     if not active_key:
         return None
     
+    # Anahtarı sisteme tanıt
     genai.configure(api_key=active_key)
     
-    # Debug: Hangi anahtarın kullanıldığını (son 4 hanesini) görmek istersen:
-    # print(f"Kullanılan Anahtar Sonu: ...{active_key[-4:]}")
-
     # ADIM 2: Prompt Hazırla
     system_prompt = """
     Sen 'Startup Survivor' adında zorlu bir girişimcilik simülasyonusun.
@@ -72,11 +70,12 @@ def get_ai_response(user_input):
     }
     """
     
-    # ADIM 3: Modeli Seç (gemini-1.5-flash şu an en kararlı olanıdır)
-    # Eğer 1.5 çalışmazsa 2.0'ı dener.
+    # ADIM 3: Modeli Seç
+    # Listende 3. sırada gördüğümüz ve çalışan model:
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.0-flash')
     except:
+        # Yedek olarak listedeki diğer versiyon
         model = genai.GenerativeModel('gemini-2.0-flash-exp')
     
     chat_history = [{"role": "user", "parts": [system_prompt]}]
@@ -92,13 +91,13 @@ def get_ai_response(user_input):
         text = text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)
     except Exception as e:
-        st.error(f"Yapay zeka hatası (Anahtar limiti veya model sorunu): {e}")
+        st.warning(f"⚠️ Bir anahtarda kota sorunu oldu, lütfen tekrar deneyin (Yeni anahtara geçilecek). Hata: {e}")
         return None
 
 # --- 4. ARAYÜZ (UI) ---
 
 st.title("🚀 Startup Survivor")
-st.caption(f"Sistem Durumu: 🟢 Aktif | 30 Anahtarlı Rotasyon Devrede")
+st.caption(f"🟢 Sistem Aktif | Model: Gemini 2.0 Flash | 30 Anahtarlı Rotasyon Modu")
 st.markdown("---")
 
 col1, col2, col3 = st.columns(3)
